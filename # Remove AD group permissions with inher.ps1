@@ -1,83 +1,98 @@
-# Remove AD group permissions with inheritance check
-# Version 3.0, Created 11092024
+# PowerShell Script to Remove AD Group Permissions with Inheritance Check
+# Version 3.0, Created 11-09-2024
+#
+# This script removes Read and Execute permissions for a specified AD group from a given root directory and its subdirectories,
+# ensuring inherited permissions are considered.
+#
+# Prerequisites:
+# - The executing user must have permission to modify ACLs.
+# - Ensure PowerShell is running with administrative privileges.
 
 # Define variables for permissions and folder path
-$rootFolder = "J:\F_Drive\Users$" # Replace with the top-level folder path
-$adGroup = "cwglobal\SD_Admins_L2"  # Replace with your AD group name
-$scriptPath = "C:\scripts" # Replace with folder location for reports
+$rootFolder = "J:\F_Drive\Users$"  # Replace with the top-level folder path
+$adGroup = "cwglobal\SD_Admins_L2"  # Replace with your AD group name
+$scriptPath = "C:\scripts"  # Define the directory for storing logs and reports
 
 # Define variables for error logging
 $date = Get-Date -Format "ddMMyyyy"
-$datetime = get-date -format "ddMMyyyy HH:mm"
+$datetime = Get-Date -Format "ddMMyyyy HH:mm"
 $serverName = $env:COMPUTERNAME
 
-# Replace backslashes and colons in $rootFolder with underscores directly for reporting purposes
-$rootFolder = $rootFolder -replace '[\\:]', '_'
-$rootFolder = $rootFolder -replace '__+', '_'
+# Sanitize folder name for use in log filenames
+$sanitizedRootFolder = $rootFolder -replace '[\\:]', '_' -replace '__+', '_'
 
-# Construct the error log file name including the root folder, server name, and date
-$errorLogFile = "${scriptPath}\Errors_${serverName}_${rootFolder}_${date}.txt"
+# Define log file paths
+$errorLogFile = "${scriptPath}\Errors_${serverName}_${sanitizedRootFolder}_${date}.txt"
+$transcriptFile = "${scriptPath}\Transcript_${serverName}_${sanitizedRootFolder}_${date}.txt"
 
-# Output to verify the constructed file path
-Write-Output $errorLogFile
+# Output constructed file paths for verification
+Write-Output "Logging errors to: $errorLogFile"
+Write-Output "Logging transcript to: $transcriptFile"
 
-# Start transcription of permissions removal
-Start-transcript "${scriptPath}\Transcript_${serverName}_${rootFolder}_${date}.txt"
+# Start transcript to capture script execution details
+Start-Transcript -Path $transcriptFile
 
-# Add a line to the transcript with the key variables
-Write-Host "Script started at ${datetime} with the following variables:" >> "${scriptPath}\Transcript_${serverName}_${rootFolder}_${adGroup}_${date}.txt"
-Write-Host "  RootFolder: $rootFolder" >> "${scriptPath}\Transcript_${serverName}_${rootFolder}_${adGroup}_${date}.txt"
-Write-Host "  ADGroup: $adGroup" >> "${scriptPath}\Transcript_${serverName}_${rootFolder}_${adGroup}_${date}.txt"
-Write-Host "  ScriptPath: $scriptPath" >> "${scriptPath}\Transcript_${serverName}_${rootFolder}_${adGroup}_${date}.txt"
-Write-Host "  Error Log: $errorLogFile" >> "${scriptPath}\Transcript_${serverName}_${rootFolder}_${date}.txt"
+# Log key variables
+Write-Host "Script started at ${datetime} with the following parameters:" -ForegroundColor Cyan
+Write-Host "  Root Folder: $rootFolder"
+Write-Host "  AD Group: $adGroup"
+Write-Host "  Script Path: $scriptPath"
+Write-Host "  Error Log: $errorLogFile"
 
-
-# Function to remove read access for the AD group from all folders under $rootFolder
+# Function to remove Read and Execute access from an AD group
 function Remove-ReadAccessFromAdGroup {
-  param (
-    [string]$path,
-    [string]$adGroup
-  )
+    param (
+        [string]$path,
+        [string]$adGroup
+    )
 
-  # Check if the AD group has read access with inheritance
-  $acl = Get-Acl $path
-  $existingRule = $acl.Access | Where-Object {
-    $_.IdentityReference -eq $adGroup -and $_.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::ReadAndExecute -and $_.IsInherited -eq $true
-  }
-
-  if ($existingRule) {
-    Write-Output "Removing permissions for $adGroup from $path (with inheritance)"
-    $acl.RemoveAccessRule($existingRule)
-    Set-Acl -Path $path -AclObject $acl
-  } else {
-    Write-Output "Permissions for $adGroup were not found on $path. Skipping..."
-  }
-
-  # Recurse through child directories
-  Get-ChildItem -Path $path -Recurse -Directory | ForEach-Object {
-    try {
-      if ($null -ne $_) {
-        $childAcl = Get-Acl $_.FullName
-        $childExistingRule = $childAcl.Access | Where-Object {
-          $_.IdentityReference -eq $adGroup -and $_.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::ReadAndExecute -and $_.IsInherited -eq $true
-        }
-
-        if ($childExistingRule) {
-          Write-Output "Removing permissions for $adGroup from $($_.FullName) (with inheritance)"
-          $childAcl.RemoveAccessRule($childExistingRule)
-          Set-Acl -Path $_.FullName -AclObject $childAcl
-        } else {
-          Write-Output "Permissions for $adGroup were not found on $($_.FullName). Skipping..."
-        }
-      }
-    } catch {
-      # Log errors for individual directories
-      $errorMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Error processing $_.FullName: $($_.Exception.Message)"
-      $errorMsg | Out-File -Append -FilePath $errorLogFile
+    # Retrieve ACL information for the target path
+    $acl = Get-Acl -Path $path
+    $existingRule = $acl.Access | Where-Object {
+        $_.IdentityReference -eq $adGroup -and 
+        $_.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::ReadAndExecute -and 
+        $_.IsInherited -eq $true
     }
-  }
+
+    if ($existingRule) {
+        Write-Output "Removing permissions for $adGroup from $path (Inherited)"
+        $acl.RemoveAccessRule($existingRule)
+        Set-Acl -Path $path -AclObject $acl
+    } else {
+        Write-Output "No inherited permissions found for $adGroup on $path. Skipping..."
+    }
+
+    # Process child directories recursively
+    Get-ChildItem -Path $path -Recurse -Directory | ForEach-Object {
+        try {
+            if ($null -ne $_) {
+                $childAcl = Get-Acl $_.FullName
+                $childExistingRule = $childAcl.Access | Where-Object {
+                    $_.IdentityReference -eq $adGroup -and 
+                    $_.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::ReadAndExecute -and 
+                    $_.IsInherited -eq $true
+                }
+
+                if ($childExistingRule) {
+                    Write-Output "Removing permissions for $adGroup from $($_.FullName) (Inherited)"
+                    $childAcl.RemoveAccessRule($childExistingRule)
+                    Set-Acl -Path $_.FullName -AclObject $childAcl
+                } else {
+                    Write-Output "No inherited permissions found for $adGroup on $($_.FullName). Skipping..."
+                }
+            }
+        } catch {
+            # Log errors encountered during processing
+            $errorMsg = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Error processing $_.FullName: $($_.Exception.Message)"
+            $errorMsg | Out-File -Append -FilePath $errorLogFile
+        }
+    }
 }
 
-# Remove read access from the AD group
-Write-Output "Removing read access for the AD group..."
+# Execute the function to remove permissions
+Write-Output "Initiating permission removal process..."
 Remove-ReadAccessFromAdGroup -path $rootFolder -adGroup $adGroup
+
+# End transcript
+Stop-Transcript
+Write-Host "Script execution completed." -ForegroundColor Green
