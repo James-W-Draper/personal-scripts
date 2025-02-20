@@ -1,68 +1,71 @@
-# SharePoint Online Site Selected Permission
+# PowerShell Script to Manage SharePoint Online 'Sites.Selected' Permissions
+# This script interacts with Microsoft Graph API to assign and manage SharePoint site permissions for a registered Azure AD application.
+#
+# Prerequisites:
+# - Azure AD application with 'Sites.Selected' permission granted.
+# - Microsoft Graph PowerShell SDK installed.
+# - Proper role-based access control (RBAC) configured for the user executing this script.
 
-# Varieables
-$AppId = "076af198-2122-4066-89e3-0343f06e13d9"
-$PermissionRole = "write"  # Change to "read", "write", or "fullControl"
-$SiteName = "DOCOsoftSIT"
-$SiteName = "DOCOSIT2"
-###  Azure AD Application Details - IT ONLY  ###
-$TenantId = "dbda57bd-564a-4ae2-b756-24442e84ba38"
-$ClientId = "a10b4f3b-a29c-4742-b5ad-b26c304a1011"
-# ClientSecret = "9MO8Q~d1w-wMH6DKzsbDFyhkBbcVm2WY79nU6awe"  # Store securely in production
+# Define variables
+$AppId = "<YOUR-APPLICATION-ID>"  # Replace with the App Registration's Client ID
+$PermissionRole = "write"  # Options: "read", "write", or "fullControl"
+$SiteName = "<YOUR-SITE-NAME>"  # Replace with your SharePoint Online site name
 
+###  Azure AD Application Details (DO NOT STORE SECRETS IN PLAIN TEXT) ###
+$TenantId = "<YOUR-TENANT-ID>"  # Replace with your Azure AD Tenant ID
+$ClientId = "<YOUR-CLIENT-ID>"  # Replace with your Client ID
+# Note: ClientSecret should be securely stored, e.g., in Azure Key Vault or environment variables
+
+# Function to retrieve an access token for Microsoft Graph API
 function Get_Mg_Access_Token ($ClientId, $TenantId) {
-    $ClientSecret = Read-Host -Prompt "Input Client Secret" -AsSecureString
+    # Prompt user for Client Secret securely
+    $ClientSecret = Read-Host -Prompt "Enter Client Secret" -AsSecureString
+    
+    # Create credential object
     $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $ClientId, $ClientSecret
+    
+    # Authenticate with Azure using the provided Service Principal credentials
     Connect-AzAccount -ServicePrincipal -TenantId $TenantId -Credential $Credential
-    $AzAccessToken = Get-AzAccessToken -AsSecureString -ResourceTypeName MSGraph
+    
+    # Retrieve Microsoft Graph access token
+    $AzAccessToken = Get-AzAccessToken -ResourceTypeName MSGraph
     return $AzAccessToken
-} # Function get_token
-Connect-MgGraph -AccessToken (Get_Mg_Access_Token $ClientId $TenantId).token -NoWelcome
+} # End of function Get_Mg_Access_Token
 
-# Get Site
+# Connect to Microsoft Graph API using the retrieved access token
+Connect-MgGraph -AccessToken (Get_Mg_Access_Token $ClientId $TenantId).Token -NoWelcome
+
+# Retrieve the target SharePoint site
 $Site = Get-MgSite -Search $SiteName
+if (-not $Site) {
+    Write-Host "Error: SharePoint site '$SiteName' not found." -ForegroundColor Red
+    exit 1
+}
 
-# Set Site Permission
-$params = @{ roles = @($PermissionRole); grantedToV2 = @{ application = @{ id = $AppId } } }
+# Define permission parameters
+$params = @{ 
+    roles = @($PermissionRole)  # Assigning role-based permissions
+    grantedToV2 = @{ application = @{ id = $AppId } }  # Grant access to the specified application
+}
+
+# Apply site permissions
+Write-Host "Assigning '$PermissionRole' permissions to App ID: $AppId for site: $($Site.DisplayName)" -ForegroundColor Cyan
 New-MgSitePermission -SiteId $Site.Id -BodyParameter $params
 
-# Get Site Permissions
-Write-Host "Site - $($Site.DisplayName)" -BackgroundColor Green -ForegroundColor Black -NoNewline
-(Get-MgSitePermission -SiteId $Site.Id) | Select-Object @{n = "PermissionID"; e = { $_.Id } }, @{n = "AppName"; e = { $_.GrantedToIdentitiesV2.Application.DisplayName } }, @{n = "AppID"; e = { $_.GrantedToIdentitiesV2.Application.Id } }, Roles
-#>
+# Retrieve and display assigned site permissions
+Write-Host "Current permissions for site: $($Site.DisplayName)" -ForegroundColor Green
+(Get-MgSitePermission -SiteId $Site.Id) | Select-Object @{n="PermissionID"; e={ $_.Id } }, 
+                                                          @{n="AppName"; e={ $_.GrantedToIdentitiesV2.Application.DisplayName } }, 
+                                                          @{n="AppID"; e={ $_.GrantedToIdentitiesV2.Application.Id } }, 
+                                                          Roles
 
-# Remove Permission
-$PermissionId = (Get-MgSitePermission -SiteId $Site.Id).Id
-Remove-MgSitePermission -SiteId $Site.Id -PermissionId $PermissionId
-#>
+# Optional: Remove assigned permissions (Use with caution!)
+if ($Confirm -eq $true) {
+    Write-Host "Removing assigned permissions..." -ForegroundColor Yellow
+    $PermissionId = (Get-MgSitePermission -SiteId $Site.Id).Id
+    Remove-MgSitePermission -SiteId $Site.Id -PermissionId $PermissionId
+    Write-Host "Permissions removed successfully." -ForegroundColor Green
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<#
-# Application to Assign Permissions To
-#$AppDisplayName = "EIP - Docosoft SIT 1"
-# SharePoint Site Details
-#$SharePointDomain = "enstargroup.sharepoint.com"
-#>
+# Script complete
+Write-Host "Script execution completed." -ForegroundColor Magenta
