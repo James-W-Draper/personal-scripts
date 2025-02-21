@@ -1,113 +1,109 @@
-# Determine who is a manager and add to AD group, remove users who are no longer managers
-# This PowerShell script retrieves users from specific Organizational Units (OUs) in Active Directory,
-# extracts their managers, adds valid managers to a specific AD group, and removes any members from the 
-# group who are no longer managers.
+# Determine who is a manager and add them to an AD group, removing those who are no longer managers
+# This PowerShell script dynamically retrieves users from specified OUs, identifies managers, 
+# updates a designated AD group, and removes outdated members.
 
-# Import the Active Directory module to use AD-related cmdlets
+# Import the Active Directory module
 Import-Module ActiveDirectory
 
-# Parameters for toggling verbose output
+# Parameters for script customization
 param (
+    [string]$Group = "CN=ManagersGroup,OU=Groups,DC=example,DC=com",
+    [array]$OUs = @(
+        "OU=Employees,DC=example,DC=com",
+        "OU=Contractors,DC=example,DC=com"
+    ),
     [switch]$Verbose
 )
 
-# Set verbose preference based on input parameter
+# Set verbose preference
 if ($Verbose) {
     $VerbosePreference = "Continue"
 } else {
     $VerbosePreference = "SilentlyContinue"
 }
 
-# Define the AD group to which managers will be added
-$Group = "CN=Enstar Managers,OU=Microsoft Exchange Distribution Groups,DC=cwglobal,DC=local"
+# Validate Group existence
+try {
+    Get-ADGroup -Identity $Group -ErrorAction Stop | Out-Null
+} catch {
+    Write-Warning "The specified AD group '$Group' does not exist. Please verify the group name."
+    exit
+}
 
-# Define the Organizational Units (OUs) from which users will be collected
-$OUs = @(
-    "OU=Employees,OU=Group Users,DC=cwglobal,DC=local"      # Employees OU
-    "OU=Contractors,OU=Group Users,DC=cwglobal,DC=local"    # Contractors OU
-)
-
-# Initialize an array list to store users collected from the specified OUs for better performance
+# Initialize a list to store users
 $Users = [System.Collections.ArrayList]@()
 
-# Loop through each OU and collect all users
+# Retrieve users from specified OUs
 foreach ($OU in $OUs) {
-    Write-Verbose "Collecting users from $OU..."
-    
-    # Get all users from the current OU, including their 'Manager' property
-    $OUUsers = Get-ADUser -Filter * -SearchBase $OU -Properties Manager
-    
-    # Add the retrieved users to the $Users array list
-    $Users.AddRange($OUUsers)
-
-    # Output the number of users found in each OU
-    Write-Verbose "Found $($OUUsers.Count) users in $OU."
-}
-
-# If no users were found in the specified OUs, output a warning and terminate the script
-if ($Users.Count -eq 0) {
-    Write-Warning "No users were found in the specified OUs."
-    return
-}
-
-# Initialize a hash set to store unique managers for better performance
-$Managers = New-Object System.Collections.Generic.HashSet[Object]
-
-# Loop through each user to collect their manager
-foreach ($User in $Users) {
-    if ($null -ne $User.Manager) {    # $null is now on the left side of the comparison
-        Write-Verbose "Getting manager for user $($User.SamAccountName)..."
-
-        # Retrieve the manager's details using their distinguished name (DN) stored in the 'Manager' property
-        try {
-            $Manager = Get-ADUser -Identity $User.Manager
-            $Managers.Add($Manager)
-            Write-Verbose "Manager $($Manager.SamAccountName) found for user $($User.SamAccountName)."
-        } catch {
-            # Output a warning if the manager cannot be retrieved
-            Write-Warning "Failed to retrieve manager for user $($User.SamAccountName). Error: $_"
-        }
-    } else {
-        # Output a message if no manager is assigned to the user
-        Write-Verbose "No manager found for user $($User.SamAccountName)."
+    Write-Verbose "Fetching users from $OU..."
+    try {
+        $OUUsers = Get-ADUser -Filter * -SearchBase $OU -Properties Manager
+        $Users.AddRange($OUUsers)
+        Write-Verbose "Found $($OUUsers.Count) users in $OU."
+    } catch {
+        Write-Warning "Failed to retrieve users from $OU. Error: $_"
     }
 }
 
-# If no managers were found, output a warning and terminate the script
+# Exit if no users were found
+if ($Users.Count -eq 0) {
+    Write-Warning "No users were found in the specified OUs. Exiting script."
+    exit
+}
+
+# Collect unique managers
+$Managers = New-Object System.Collections.Generic.HashSet[Object]
+
+foreach ($User in $Users) {
+    if ($User.Manager) {
+        try {
+            $Manager = Get-ADUser -Identity $User.Manager
+            $Managers.Add($Manager) | Out-Null
+            Write-Verbose "Manager $($Manager.SamAccountName) identified for $($User.SamAccountName)."
+        } catch {
+            Write-Warning "Unable to retrieve manager for $($User.SamAccountName). Error: $_"
+        }
+    } else {
+        Write-Verbose "$($User.SamAccountName) has no assigned manager."
+    }
+}
+
+# Exit if no managers were found
 if ($Managers.Count -eq 0) {
-    Write-Warning "No managers were found, exiting script."
-    return
+    Write-Warning "No managers identified. Exiting script."
+    exit
 }
 
 # Convert HashSet to array for processing
 $Managers = @($Managers)
 
-# Retrieve the current members of the AD group
-$GroupMembers = Get-ADGroupMember -Identity $Group | Select-Object SamAccountName
+# Retrieve current members of the AD group
+$GroupMembers = Get-ADGroupMember -Identity $Group | Select-Object -ExpandProperty SamAccountName
 
-# Remove users in bulk if they're no longer managers
-$MembersToRemove = $GroupMembers | Where-Object { $Managers.SamAccountName -notcontains $_.SamAccountName }
+# Determine which users should be removed
+$MembersToRemove = $GroupMembers | Where-Object { $_ -notin $Managers.SamAccountName }
+
 if ($MembersToRemove.Count -gt 0) {
-    Write-Verbose "Removing users no longer valid managers from group $Group..."
+    Write-Verbose "Removing non-managers from $Group..."
     try {
-        Remove-ADGroupMember -Identity $Group -Members $MembersToRemove.SamAccountName -Confirm:$false
-        Write-Verbose "Users removed successfully."
+        Remove-ADGroupMember -Identity $Group -Members $MembersToRemove -Confirm:$false
+        Write-Verbose "Successfully removed outdated members."
     } catch {
-        Write-Warning "Failed to remove users from group $Group. Error: $_"
+        Write-Warning "Error removing users from $Group. Error: $_"
     }
 }
 
-# Add managers in bulk who are not already members
-$ManagersToAdd = $Managers | Where-Object { $GroupMembers.SamAccountName -notcontains $_.SamAccountName }
+# Determine which managers should be added
+$ManagersToAdd = $Managers | Where-Object { $_.SamAccountName -notin $GroupMembers }
+
 if ($ManagersToAdd.Count -gt 0) {
-    Write-Verbose "Adding new managers to group $Group..."
+    Write-Verbose "Adding new managers to $Group..."
     try {
         Add-ADGroupMember -Identity $Group -Members $ManagersToAdd.SamAccountName
-        Write-Verbose "Managers added successfully."
+        Write-Verbose "Successfully added new managers."
     } catch {
-        Write-Warning "Failed to add managers to group $Group. Error: $_"
+        Write-Warning "Error adding managers to $Group. Error: $_"
     }
 }
 
-# Output a final message to indicate the script has completed successfully
 Write-Verbose "Script execution completed."
