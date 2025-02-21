@@ -1,4 +1,14 @@
-# personal-scripts
+# 🔹 Essential PowerShell Commands for Exchange Online (Hybrid Environment)
+
+A collection of **10 useful PowerShell commands** for managing Exchange Online in a **hybrid setup**. These commands help with mailbox management, delegation, forwarding, archiving, migrations, and more.
+
+---
+
+## 📌 1. Get a list of mailboxes and their primary email addresses
+```powershell
+Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress
+
+
 ### Get all inactive mailboxes, and the aliases. Export to csv.
 `Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited | Select DisplayName, PrimarySMTPAddress, DistinguishedName, ExchangeGuid, WhenSoftDeleted, @{Name="Aliases";Expression={$_.EmailAddresses -match "^smtp:" -replace "smtp:" -join "; "}} | Export-Csv -Path "C:\Temp\InactiveMailboxes.csv" -NoTypeInformation -Encoding UTF8`
 
