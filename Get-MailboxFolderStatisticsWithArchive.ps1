@@ -7,7 +7,7 @@
 # Connect to Exchange Online
 # -----------------------------
 Write-Host "Connecting to Exchange Online..." -ForegroundColor Cyan
-Connect-ExchangeOnline -UserPrincipalName admin@yourdomain.com
+Connect-ExchangeOnline
 
 # -----------------------------
 # Define the target mailbox
