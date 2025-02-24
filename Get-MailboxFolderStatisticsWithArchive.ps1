@@ -12,7 +12,7 @@ Connect-ExchangeOnline
 # -----------------------------
 # Define the target mailbox
 # -----------------------------
-$Mailbox = "user@yourdomain.com"
+$Mailbox = "user@yourdomain.com" # Replace with email address of Mailbox
 Write-Host "Retrieving mailbox folder statistics for: $Mailbox" -ForegroundColor Cyan
 
 # -----------------------------
@@ -64,5 +64,5 @@ Write-Host "Results exported to: $csvPath" -ForegroundColor Magenta
 # -----------------------------
 # Disconnect from Exchange Online
 # -----------------------------
-Disconnect-ExchangeOnline -Confirm:$false
-Write-Host "Disconnected from Exchange Online." -ForegroundColor Red
+# Disconnect-ExchangeOnline -Confirm:$false
+# Write-Host "Disconnected from Exchange Online." -ForegroundColor Red
