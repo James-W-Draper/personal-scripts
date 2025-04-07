@@ -1,12 +1,41 @@
-﻿<#
-=============================================================================================
-Name:           Export Office 365 mail traffic statistics by user report
-Description:    This script exports mails sent, received, spam received and malware received statistics by users to CSV file
-Version:        3.0
-Website:        o365reports.com
-Script by:      O365Reports Team
-For detailed script execution: https://o365reports.com/2020/08/12/export-office-365-mail-traffic-report-with-powershell/
-============================================================================================
+<#
+.SYNOPSIS
+    Export Office 365 mail traffic statistics by user to CSV.
+
+.DESCRIPTION
+    This script generates a report of mail traffic by user from Exchange Online, including mail sent, received, spam received,
+    or malware received counts. Supports optional MFA bypass, filtering by org-only users, and custom date ranges.
+
+.PARAMETER NoMFA
+    Use this switch to authenticate with stored credentials instead of MFA.
+
+.PARAMETER OnlyOrganizationUsers
+    Filters results to only users in verified domains of your tenant.
+
+.PARAMETER StartDate
+    Report start date (must be within past 90 days).
+
+.PARAMETER EndDate
+    Report end date.
+
+.PARAMETER MailsSent
+    Generate report for mail sent volume.
+
+.PARAMETER SpamsReceived
+    Generate report for spam received volume.
+
+.PARAMETER MalwaresReceived
+    Generate report for malware received volume.
+
+.EXAMPLE
+    .\Export-MailTrafficStats.ps1 -MailsSent -StartDate '2024-12-01' -EndDate '2024-12-05'
+
+.EXAMPLE
+    .\Export-MailTrafficStats.ps1 -NoMFA -UserName admin@tenant.com -Password MySecurePassword -SpamsReceived
+
+.NOTES
+    Output is saved in the working directory with a timestamped filename.
+    Requires ExchangeOnlineManagement and optionally MSOnline module.
 #>
 Param
 (
