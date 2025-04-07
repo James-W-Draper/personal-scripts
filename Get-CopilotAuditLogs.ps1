@@ -1,156 +1,100 @@
-# Audit log collection script for Copilot
+<#
+.SYNOPSIS
+Collects Copilot interaction audit logs from Exchange Online and appends new entries to a CSV.
 
-# Check if Exchange Online module is already installed
-$moduleInstalled = Get-Module -ListAvailable | Where-Object { $_.Name -eq 'ExchangeOnlineManagement' }
+.DESCRIPTION
+This script:
+- Connects to Exchange Online
+- Collects CopilotInteraction records from the Unified Audit Log
+- Tracks the last successfully processed timestamp using either the CSV or a fallback log
+- Supports pagination (5000 record limit)
+- Outputs data to a CSV and updates the timestamp log
 
-if ($null -eq $moduleInstalled) {
+.NOTES
+- Requires the ExchangeOnlineManagement module
+- Must be run by a user with permissions to access audit logs (Audit Reader or equivalent)
+#>
 
-    # Exchange Online module is not installed, attempt to install it
+# === MODULE LOAD ===
+if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
     try {
         Write-Host "Installing Exchange Online module..."
         Install-Module -Name ExchangeOnlineManagement -Force -AllowClobber -Scope CurrentUser
     } catch {
-        Write-Host "Failed to install Exchange Online module: $_"
+        Write-Host "❌ Failed to install Exchange Online module: $_"
         exit
     }
 }
-
-# Import the Exchange Online module
 Import-Module ExchangeOnlineManagement
 
-# Connect to Exchange Online
+# === CONNECT TO EXO ===
 try {
     Connect-ExchangeOnline
-    Write-Host "Connected to Exchange Online."
+    Write-Host "✅ Connected to Exchange Online."
 } catch {
-    Write-Host "Failed to connect to Exchange Online: $_"
+    Write-Host "❌ Failed to connect to Exchange Online: $_"
     exit
 }
 
-# Define the folder path
-$folderPath = "C:\Users\draperj\Enstargroup\Copilot CoE - Program Team - Program Team\new audit log"
-
-# Check if the folder exists; create it if it doesn't
-if (!(Test-Path -Path $folderPath)) {
+# === FILE PATHS ===
+$folderPath = "C:\Scripts\CopilotAuditLogs"
+if (-not (Test-Path $folderPath)) {
     New-Item -ItemType Directory -Path $folderPath -Force | Out-Null
-    Write-Host "Created directory: $folderPath"
+    Write-Host "📁 Created directory: $folderPath"
 }
 
-# Path to the output CSV file
-$outputCsv = Join-Path $folderPath "Copilot-Auditlogs.csv"
+$outputCsv  = Join-Path $folderPath "Copilot-Auditlogs.csv"
+$outputLog  = Join-Path $folderPath "Copilot-LastUpdate.txt"
 
-# Path to the log file storing the last processed timestamp
-$outputlog = Join-Path $folderPath "Copilot-lastupdate.txt"
-
-# Initialize $lastProcessedTime
+# === DETERMINE LAST PROCESSED TIME ===
 $lastProcessedTime = $null
 
-# Check if the CSV file exists
 if (Test-Path $outputCsv) {
     try {
-        # Read the last line of the CSV file efficiently
         $lastLine = Get-Content $outputCsv -Tail 1
         if ($lastLine) {
-            # Convert the last line from CSV format to an object
             $lastEntry = $lastLine | ConvertFrom-Csv
-            $creationDateString = $lastEntry.CreationDate
-            if ($creationDateString) {
-                $lastProcessedTime = [DateTime]$creationDateString
-                # Add one second to avoid reprocessing the last record
-                $lastProcessedTime = $lastProcessedTime.AddSeconds(1)
+            if ($lastEntry.CreationDate) {
+                $lastProcessedTime = ([DateTime]$lastEntry.CreationDate).AddSeconds(1)
             }
         }
     } catch {
-        Write-Warning "Failed to read the last entry from CSV: $_"
+        Write-Warning "⚠️ Failed to read last CSV entry: $_"
     }
 }
 
-# If $lastProcessedTime is still null, try to get it from the log file
-if (-not $lastProcessedTime) {
-    $lastProcessedTimeFromLog = Get-Content $outputlog -ErrorAction SilentlyContinue | Select-Object -Last 1
-    if ($lastProcessedTimeFromLog) {
-        $lastProcessedTime = [DateTime]$lastProcessedTimeFromLog
+if (-not $lastProcessedTime -and (Test-Path $outputLog)) {
+    try {
+        $logTime = Get-Content $outputLog | Select-Object -Last 1
+        $lastProcessedTime = [DateTime]$logTime
+    } catch {
+        Write-Warning "⚠️ Failed to read timestamp log file."
     }
 }
 
-# If $lastProcessedTime is still null, default to 7 days ago
 if (-not $lastProcessedTime) {
     $lastProcessedTime = (Get-Date).AddDays(-7)
+    Write-Host "📅 Defaulting to 7 days ago: $lastProcessedTime"
 }
 
-# Define start and end dates
+# === LOOP THROUGH DATES ===
 $startDate = $lastProcessedTime
 $endDate = Get-Date
-
-# Check if CSV file exists for export logic
 $csvExists = Test-Path $outputCsv
 
-# Loop through each day from the last processed time to now
 for ($date = $startDate.Date; $date -le $endDate.Date; $date = $date.AddDays(1)) {
-
     try {
-        # Initialize variables for pagination
-        $sessionId = [Guid]::NewGuid()
+        $sessionId = [guid]::NewGuid()
         $moreResults = $true
         $nextPage = $null
 
         while ($moreResults) {
-            # Adjust start and end dates within the loop
-            if ($date -eq $startDate.Date) {
-                # On the first day, start from the exact $startDate
-                $searchStartDate = $startDate
-            } else {
-                # On subsequent days, start from midnight
-                $searchStartDate = $date
-            }
+            $searchStartDate = if ($date -eq $startDate.Date) { $startDate } else { $date }
+            $searchEndDate   = if ($date -eq $endDate.Date) { $endDate } else { $date.AddDays(1).AddSeconds(-1) }
 
-            if ($date -eq $endDate.Date) {
-                # On the last day, end at the exact $endDate
-                $searchEndDate = $endDate
-            } else {
-                # On other days, end at the end of the day
-                $searchEndDate = $date.AddDays(1).AddSeconds(-1)
-            }
+            $results = Search-UnifiedAuditLog -StartDate $searchStartDate -EndDate $searchEndDate `
+                      -RecordType CopilotInteraction -ResultSize 5000 -SessionId $sessionId -NextPage $nextPage
 
-            # Search the Unified Audit Log for the specified time range
-            $results = Search-UnifiedAuditLog -StartDate $searchStartDate -EndDate $searchEndDate -RecordType CopilotInteraction -ResultSize 5000 -SessionId $sessionId -NextPage $nextPage
-
-            # Check if results are found
             if ($results) {
-                # If CSV does not exist, include headers
                 if (-not $csvExists) {
-                    $results | Export-Csv -NoTypeInformation -Path $outputCsv
-                    $csvExists = $true  # Set to true after creating the file
-                } else {
-                    $results | Export-Csv -NoTypeInformation -Append -Path $outputCsv -NoClobber
-                }
-
-                # Check if more results are available
-                if ($results.Count -eq 5000) {
-                    Write-Warning "Maximum number of records retrieved (5000) for date $date. There may be more records. Continuing to next page."
-                    $moreResults = $true
-                    # Continue pagination
-                    $nextPage = $results[$results.Count - 1].ResultId
-                } else {
-                    $moreResults = $false
-                }
-            } else {
-                $moreResults = $false
-            }
-        }
-
-    } catch {
-        Write-Warning "An error occurred while searching audit logs for date ${date}: $($_)"
-
-        continue
-    }
-}
-
-# Get the current timestamp
-$timestamp = Get-Date
-
-# Update the last processed time in the log file
-Set-Content -Path $outputlog -Value $timestamp
-
-# Print the last processed time
-Write-Host "The file was last updated at: $timestamp"
+                    $results | Export-Csv -Path $output
