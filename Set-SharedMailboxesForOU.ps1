@@ -1,126 +1,106 @@
 <#
 .SYNOPSIS
-    This script connects to Exchange Online, retrieves user accounts from a specified 
-    Organizational Unit (OU) in Active Directory, and sets the mailboxes of users whose 
-    User Principal Name (UPN) ends with '@enstargroup.com' to shared mailboxes.
+Converts mailboxes of users in a specified Active Directory OU to shared mailboxes if they belong to a target domain.
 
 .DESCRIPTION
-    - The script first checks if a session to Exchange Online is already active. If not, it connects to Exchange Online.
-    - It then retrieves all user accounts from the specified OU in Active Directory.
-    - The script filters these users based on their UPN to include only those ending with 
-      '@enstargroup.com'.
-    - It checks if each user's mailbox is already set to a shared mailbox. If not, the 
-      mailbox is converted to a shared mailbox.
-    - The script provides progress feedback on how many accounts have been discovered and 
-      how many mailboxes have been actioned.
+This script connects to Exchange Online and retrieves user accounts from a specified Active Directory Organizational Unit (OU).
+It filters accounts whose UserPrincipalName ends with "@enstargroup.com" and converts their mailboxes to shared type
+if not already set. The script provides real-time progress and a final summary.
 
 .PARAMETER OU
-    The Organizational Unit (OU) path in Active Directory where user accounts are located.
-    .\Set-SharedMailboxesForOU.ps1 -OU "OU=Sales,DC=example,DC=com"
-
-.OUTPUTS
-    Progress messages and a summary of how many mailboxes were converted to shared.
+The distinguished name of the Active Directory Organizational Unit containing user accounts.
 
 .EXAMPLE
-    .\Set-SharedMailboxesForOU.ps1
+.\Set-SharedMailboxesForOU.ps1 -OU "OU=Finance,DC=example,DC=com"
+
+.NOTES
+- Requires the ActiveDirectory and ExchangeOnlineManagement modules
+- Requires sufficient Exchange Online and AD permissions
+- Created by: [Your Name Here]
+- Version: 1.0
 #>
 
 param (
-    [Parameter(Mandatory)]
-    [string]$OU = "OU=CoreSpec,OU=Group Users,DC=cwglobal,DC=local"
+    [Parameter(Mandatory = $true)]
+    [string]$OU
 )
 
-# Import the ExchangeOnlineManagement module if not already imported
+# Constants
+$TargetDomain = "@enstargroup.com"
+
+# Ensure the required module is available
 if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
     try {
         Install-Module -Name ExchangeOnlineManagement -Scope CurrentUser -Force -ErrorAction Stop
-        Import-Module ExchangeOnlineManagement -ErrorAction Stop
     } catch {
-        Write-Host "Failed to install or import ExchangeOnlineManagement module: $($_.Exception.Message)" -ForegroundColor Red
-        Exit
+        Write-Host "Failed to install ExchangeOnlineManagement module: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
     }
-} else {
-    Import-Module ExchangeOnlineManagement -ErrorAction SilentlyContinue
 }
+Import-Module ExchangeOnlineManagement -ErrorAction SilentlyContinue
 
-# Function to check if already connected to Exchange Online
+# Check if already connected to EXO
 function Test-ExchangeOnlineConnection {
     try {
-        # Check if any existing PSSession to Exchange Online exists
-        $exoSession = Get-PSSession | Where-Object { $_.ConfigurationName -eq "Microsoft.Exchange" }
-        if ($exoSession) {
-            Write-Host "Already connected to Exchange Online."
-            return $true
-        } else {
-            return $false
-        }
+        return (Get-PSSession | Where-Object { $_.ConfigurationName -eq "Microsoft.Exchange" }).Count -gt 0
     } catch {
         return $false
     }
 }
 
-# Connect to EXO only if not already connected
+# Connect to Exchange Online if needed
 if (-not (Test-ExchangeOnlineConnection)) {
     try {
         Connect-ExchangeOnline -ErrorAction Stop
         Write-Host "Connected to Exchange Online successfully."
     } catch {
         Write-Host "Failed to connect to Exchange Online: $($_.Exception.Message)" -ForegroundColor Red
-        Exit
+        exit 1
     }
+} else {
+    Write-Host "Already connected to Exchange Online."
 }
 
-# Get all users in the specified OU
+# Get users from specified OU
 try {
-    $users = Get-ADUser -SearchBase $OU -Filter * -Property UserPrincipalName -ErrorAction Stop
-    $totalUsers = $users.Count
-    Write-Host "Users retrieved successfully from OU: $OU. Total users found: $totalUsers"
+    $users = Get-ADUser -SearchBase $OU -Filter * -Property UserPrincipalName
+    Write-Host "Retrieved $($users.Count) users from OU: $OU"
 } catch {
-    Write-Host "Error retrieving users: $($_.Exception.Message)" -ForegroundColor Red
-    Exit
+    Write-Host "Failed to retrieve users: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
 
-# Filter users whose UPN ends with "@enstargroup.com"
-$filteredUsers = $users | Where-Object { $_.UserPrincipalName -like "*@enstargroup.com" }
-$totalFilteredUsers = $filteredUsers.Count
-
-# If no users are found, display a message and exit
-if (-not $totalFilteredUsers) {
-    Write-Host "No users found with UPN ending in '@enstargroup.com'." -ForegroundColor Yellow
-    Exit
+# Filter by UPN domain
+$filteredUsers = $users | Where-Object { $_.UserPrincipalName -like "*$TargetDomain" }
+if (-not $filteredUsers) {
+    Write-Host "No users found with UPN ending in '$TargetDomain'" -ForegroundColor Yellow
+    exit 0
 }
 
-# Display the total number of users being processed
-Write-Host "Total users to process: $totalFilteredUsers"
+Write-Host "Total users to process: $($filteredUsers.Count)"
 
-# Initialize action counter and progress index
-$actionedCount = 0
-$progressIndex = 1
+# Process users
+$convertedCount = 0
+$index = 1
 
-# Loop through the filtered users and set their mailbox to shared if not already shared
-$filteredUsers | ForEach-Object {
-    $upn = $_.UserPrincipalName
+foreach ($user in $filteredUsers) {
+    $upn = $user.UserPrincipalName
     try {
-        # Check mailbox type
         $mailbox = Get-Mailbox -Identity $upn -ErrorAction Stop
-        if ($mailbox.RecipientTypeDetails -eq "SharedMailbox") {
-            Write-Host "[$progressIndex/$totalFilteredUsers] Mailbox for $upn is already set to shared."
-        } else {
-            # Set mailbox type to shared if not already shared
+        if ($mailbox.RecipientTypeDetails -ne 'SharedMailbox') {
             Set-Mailbox -Identity $upn -Type Shared -ErrorAction Stop
-            Write-Host "[$progressIndex/$totalFilteredUsers] Successfully set mailbox type to shared for: $upn."
-            $actionedCount++
+            Write-Host "[$index/$($filteredUsers.Count)] Converted: $upn to Shared Mailbox"
+            $convertedCount++
+        } else {
+            Write-Host "[$index/$($filteredUsers.Count)] Already shared: $upn"
         }
     } catch {
-        Write-Host "[$progressIndex/$totalFilteredUsers] Error processing mailbox for: $upn - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[$index/$($filteredUsers.Count)] Error processing $upn - $($_.Exception.Message)" -ForegroundColor Red
     }
-
-    # Update progress
-    $progressIndex++
+    $index++
 }
 
-# Display completion message
-Write-Host "Processing complete. $actionedCount out of $totalFilteredUsers mailboxes were changed to shared."
+Write-Host "`nCompleted: $convertedCount out of $($filteredUsers.Count) mailboxes converted to Shared."
 
-# Disconnect from Exchange Online
+# Disconnect cleanly
 Disconnect-ExchangeOnline -Confirm:$false
