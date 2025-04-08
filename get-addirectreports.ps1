@@ -1,96 +1,87 @@
 function Get-ADDirectReports {
     <#
     .SYNOPSIS
-        This function retrieve the directreports property from the IdentitySpecified.
-        Optionally you can specify the Recurse parameter to find all the indirect
-        users reporting to the specify account (Identity).
+        Retrieves direct reports from Active Directory for one or more specified users.
 
     .DESCRIPTION
-        This function retrieve the directreports property from the IdentitySpecified.
-        Optionally you can specify the Recurse parameter to find all the indirect
-        users reporting to the specify account (Identity).
-
-    .NOTES
-        Francois-Xavier Cat
-        lazywinadmin.com
-        @lazywinadmin
-
-        Blog post: https://lazywinadmin.com/2014/10/powershell-who-reports-to-whom-active.html
-
-        VERSION HISTORY
-        1.0 2014/10/05 Initial Version
+        This function queries Active Directory for users who report directly or indirectly
+        (when -Recurse is used) to the specified Identity. It returns detailed information
+        about each reporting user, including their name, mail, and manager.
 
     .PARAMETER Identity
-        Specify the account to inspect
+        One or more user accounts (e.g. sAMAccountName, DistinguishedName, etc.) to inspect.
 
     .PARAMETER Recurse
-        Specify that you want to retrieve all the indirect users under the account
+        If specified, recursively retrieves all indirect reports as well.
 
     .EXAMPLE
-        Get-ADDirectReports -Identity Test_director
+        Get-ADDirectReports -Identity "j.smith"
 
-Name                SamAccountName      Mail                Manager
-----                --------------      ----                -------
-test_managerB       test_managerB       test_managerB@la... test_director
-test_managerA       test_managerA       test_managerA@la... test_director
+        Retrieves users who directly report to j.smith.
 
     .EXAMPLE
-        Get-ADDirectReports -Identity Test_director -Recurse
+        Get-ADDirectReports -Identity "j.smith" -Recurse
 
-Name                SamAccountName      Mail                Manager
-----                --------------      ----                -------
-test_managerB       test_managerB       test_managerB@la... test_director
-test_userB1         test_userB1         test_userB1@lazy... test_managerB
-test_userB2         test_userB2         test_userB2@lazy... test_managerB
-test_managerA       test_managerA       test_managerA@la... test_director
-test_userA2         test_userA2         test_userA2@lazy... test_managerA
-test_userA1         test_userA1         test_userA1@lazy... test_managerA
+        Retrieves both direct and indirect reports to j.smith.
+
+    .NOTES
+        Author: Francois-Xavier Cat (Original)
+        Adapted and modernised by: James Draper
+        Source: https://lazywinadmin.com/2014/10/powershell-who-reports-to-whom-active.html
+
     .LINK
         https://github.com/lazywinadmin/PowerShell
     #>
+
     [CmdletBinding()]
-    PARAM (
-        [Parameter(Mandatory)]
-        [String[]]$Identity,
-        [Switch]$Recurse
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$Identity,
+
+        [Parameter()]
+        [switch]$Recurse
     )
-    BEGIN {
-        TRY {
-            IF (-not (Get-Module -Name ActiveDirectory)) { Import-Module -Name ActiveDirectory -ErrorAction 'Stop' -Verbose:$false }
-        }
-        CATCH {
+
+    begin {
+        try {
+            if (-not (Get-Module -Name ActiveDirectory)) {
+                Import-Module -Name ActiveDirectory -ErrorAction Stop -Verbose:$false
+            }
+        } catch {
             $PSCmdlet.ThrowTerminatingError($_)
         }
     }
-    PROCESS {
-        foreach ($Account in $Identity) {
-            TRY {
-                IF ($PSBoundParameters['Recurse']) {
-                    # Get the DirectReports
-                    Write-Verbose -Message "[PROCESS] Account: $Account (Recursive)"
-                    Get-Aduser -identity $Account -Properties directreports |
-                        ForEach-Object -Process {
-                            $_.directreports | ForEach-Object -Process {
-                                # Output the current object with the properties Name, SamAccountName, Mail and Manager
-                                Get-ADUser -Identity $PSItem -Properties * | Select-Object -Property *, @{ Name = "ManagerAccount"; Expression = { (Get-Aduser -identity $psitem.manager).samaccountname } }
-                                # Gather DirectReports under the current object and so on...
-                                Get-ADDirectReports -Identity $PSItem -Recurse
-                            }
+
+    process {
+        foreach ($User in $Identity) {
+            try {
+                if ($Recurse) {
+                    Write-Verbose "Processing $User recursively"
+                    Get-ADUser -Identity $User -Properties DirectReports | ForEach-Object {
+                        $_.DirectReports | ForEach-Object {
+                            Get-ADUser -Identity $_ -Properties * |
+                                Select-Object -Property *, @{Name='ManagerAccount'; Expression={ (Get-ADUser -Identity $_.Manager).SamAccountName }}
+
+                            # Recursive call
+                            Get-ADDirectReports -Identity $_ -Recurse
                         }
-                }#IF($PSBoundParameters['Recurse'])
-                IF (-not ($PSBoundParameters['Recurse'])) {
-                    Write-Verbose -Message "[PROCESS] Account: $Account"
-                    # Get the DirectReports
-                    Get-Aduser -identity $Account -Properties directreports | Select-Object -ExpandProperty directReports |
-                    Get-ADUser -Properties * | Select-Object -Property *, @{ Name = "ManagerAccount"; Expression = { (Get-Aduser -identity $psitem.manager).samaccountname } }
-            }#IF (-not($PSBoundParameters['Recurse']))
-        }#TRY
-        CATCH {
-            $PSCmdlet.ThrowTerminatingError($_)
+                    }
+                } else {
+                    Write-Verbose "Processing $User"
+                    Get-ADUser -Identity $User -Properties DirectReports |
+                        Select-Object -ExpandProperty DirectReports |
+                        ForEach-Object {
+                            Get-ADUser -Identity $_ -Properties * |
+                                Select-Object -Property *, @{Name='ManagerAccount'; Expression={ (Get-ADUser -Identity $_.Manager).SamAccountName }}
+                        }
+                }
+            } catch {
+                $PSCmdlet.ThrowTerminatingError($_)
+            }
         }
     }
-}
-END {
-    Remove-Module -Name ActiveDirectory -ErrorAction 'SilentlyContinue' -Verbose:$false | Out-Null
-}
+
+    end {
+        Remove-Module -Name ActiveDirectory -ErrorAction SilentlyContinue -Verbose:$false | Out-Null
+    }
 }
