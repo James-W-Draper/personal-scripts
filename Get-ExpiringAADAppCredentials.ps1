@@ -89,7 +89,13 @@ foreach ($App in $Apps) {
     }
 }
 
-# Export to Excel
-$CredentialReport | Export-Excel -Path $OutputPath -WorksheetName "AppCreds" -BoldTopRow -AutoSize -AutoFilter -FreezeTopRow
+# Define conditional formatting rules
+$ConditionalFormatting = @(
+    New-ConditionalText -Range "F2:F999" -Text "TRUE" -BackgroundColor 'Red' -ConditionalType Equal,
+    New-ConditionalText -Range "G2:G999" -Text "TRUE" -BackgroundColor 'Yellow' -ConditionalType Equal
+)
+
+# Export to Excel with formatting
+$CredentialReport | Export-Excel -Path $OutputPath -WorksheetName "AppCreds" -BoldTopRow -AutoSize -AutoFilter -FreezeTopRow -ConditionalFormat $ConditionalFormatting
 
 Write-Host "✅ Report exported to $OutputPath" -ForegroundColor Green
