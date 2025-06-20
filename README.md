@@ -5,41 +5,64 @@ A collection of **10 useful PowerShell commands** for managing Exchange Online i
 ---
 
 ### Get a list of mailboxes and their primary email addresses
-`powershell
-Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress`
+``` powershell
+Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress
+```
 
 ### Get all inactive mailboxes, and the aliases. Export to csv.
-`Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited | Select DisplayName, PrimarySMTPAddress, DistinguishedName, ExchangeGuid, WhenSoftDeleted, @{Name="Aliases";Expression={$_.EmailAddresses -match "^smtp:" -replace "smtp:" -join "; "}} | Export-Csv -Path "C:\Temp\InactiveMailboxes.csv" -NoTypeInformation -Encoding UTF8`
+``` powershell
+Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited | Select DisplayName, PrimarySMTPAddress, DistinguishedName, ExchangeGuid, WhenSoftDeleted, @{Name="Aliases";Expression={$_.EmailAddresses -match "^smtp:" -replace "smtp:" -join "; "}} | Export-Csv -Path "C:\Temp\InactiveMailboxes.csv" -NoTypeInformation -Encoding UTF8
+```
 
 ### Get a list of mailboxes and their primary email addresses
-`Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress`
+``` powershell
+Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress
+```
 
 ### Find all shared mailboxes
-`Get-Mailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress`
+``` powershell
+Get-Mailbox -RecipientTypeDetails SharedMailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress
+```
 
 ### Check mailbox delegation (Full Access & Send As)
-`Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress, @{Name="FullAccess";Expression={(Get-MailboxPermission $_.Identity | Where-Object {($_.AccessRights -match "FullAccess") -and ($_.User -notmatch "NT AUTHORITY\\SELF")} | Select-Object User -ExpandProperty User) -join ", "}}, @{Name="SendAs";Expression={(Get-RecipientPermission $_.Identity | Where-Object {($_.AccessRights -match "SendAs")} | Select-Object Trustee -ExpandProperty Trustee) -join ", "}}`
+``` powershell
+Get-Mailbox -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress, @{Name="FullAccess";Expression={(Get-MailboxPermission $_.Identity | Where-Object {($_.AccessRights -match "FullAccess") -and ($_.User -notmatch "NT AUTHORITY\\SELF")} | Select-Object User -ExpandProperty User) -join ", "}}, @{Name="SendAs";Expression={(Get-RecipientPermission $_.Identity | Where-Object {($_.AccessRights -match "SendAs")} | Select-Object Trustee -ExpandProperty Trustee) -join ", "}}
+```
 
 ### List all mailboxes with forwarding enabled
-`Get-Mailbox -ResultSize Unlimited | Where-Object { $_.ForwardingSMTPAddress -or $_.ForwardingAddress } | Select DisplayName,PrimarySMTPAddress,ForwardingSMTPAddress,ForwardingAddress,DeliverToMailboxAndForward`
+``` powershell
+Get-Mailbox -ResultSize Unlimited | Where-Object { $_.ForwardingSMTPAddress -or $_.ForwardingAddress } | Select DisplayName,PrimarySMTPAddress,ForwardingSMTPAddress,ForwardingAddress,DeliverToMailboxAndForward
+```
 
 ### Get a list of all mail-enabled security groups
-`Get-Mailbox -Archive -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress,ArchiveStatus`
+``` powershell
+Get-Mailbox -Archive -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress,ArchiveStatus
+```
 
 ### Find users with mailbox archive enabled
-`Get-Mailbox -Archive -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress,ArchiveStatus`
+``` powershell
+Get-Mailbox -Archive -ResultSize Unlimited | Select DisplayName,PrimarySMTPAddress,ArchiveStatus
+```
 
 ### Check the last login time of a mailbox
-`Get-MailboxStatistics -Identity user@domain.com | Select DisplayName,LastLogonTime`
+``` powershell
+Get-MailboxStatistics -Identity user@domain.com | Select DisplayName,LastLogonTime
+```
 
 ### Get a list of transport rules (mail flow rules)
-`Get-TransportRule | Select Name,Mode,Priority,Comments`
+``` powershell
+Get-TransportRule | Select Name,Mode,Priority,Comments
+```
 
 ### Get the mailbox size of a user
-`Get-MailboxStatistics -Identity user@domain.com | Select DisplayName,TotalItemSize,ItemCount`
+``` powershell
+Get-MailboxStatistics -Identity user@domain.com | Select DisplayName,TotalItemSize,ItemCount
+```
 
 ### Find users with external email forwarding enabled
-`Get-Mailbox -ResultSize Unlimited | Where-Object { $_.ForwardingSMTPAddress -match "@" -and $_.ForwardingSMTPAddress -notmatch "yourdomain.com" } | Select DisplayName,PrimarySMTPAddress,ForwardingSMTPAddress`
+``` powershell
+Get-Mailbox -ResultSize Unlimited | Where-Object { $_.ForwardingSMTPAddress -match "@" -and $_.ForwardingSMTPAddress -notmatch "yourdomain.com" } | Select DisplayName,PrimarySMTPAddress,ForwardingSMTPAddress
+```
 
 
 ### Formatting guidance
