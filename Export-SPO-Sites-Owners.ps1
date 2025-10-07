@@ -44,6 +44,8 @@ Site Collection Admin required:
     foreach ($site in $sites) {
       Set-SPOUser -Site $site.Url -LoginName "<your-upn>@<yourdomain>.com" -IsSiteCollectionAdmin $false
     }
+Honestly, might be easier to just look at export-spo-sites-lite.ps1 where it's not as intrusive, but doesn't need site collection admin.
+
 
 Graph delegated scopes required:
   - Group.Read.All
