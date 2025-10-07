@@ -30,21 +30,21 @@ Site Collection Admin required:
   - This is a bit painful, because the only way to accomplish this is with Sharepoint admin, map yourself as a collection admin to every site (or everysite you need), run the script, and then remove yourself afterwards.
   - The way to do this is to run this script:
     
-    # Connect to SharePoint Online
-    Connect-SPOService -Url https://<tenant>-admin.sharepoint.com
-    # Get all sites
-    $sites = Get-SPOSite -Limit All
-    # Add yourself as Site Collection Admin to each
-    foreach ($site in $sites) {
-      Set-SPOUser -Site $site.Url -LoginName "<your-upn>@<yourdomain>.com" -IsSiteCollectionAdmin $true
-    }
+      # Connect to SharePoint Online
+      Connect-SPOService -Url https://<tenant>-admin.sharepoint.com
+      # Get all sites
+      $sites = Get-SPOSite -Limit All
+      # Add yourself as Site Collection Admin to each
+      foreach ($site in $sites) {
+        Set-SPOUser -Site $site.Url -LoginName "<your-upn>@<yourdomain>.com" -IsSiteCollectionAdmin $true
+      }
 
   - Then run the script where you need site collection
   - Then remove yourself as a site collection admin using this script:
-    foreach ($site in $sites) {
-      Set-SPOUser -Site $site.Url -LoginName "<your-upn>@<yourdomain>.com" -IsSiteCollectionAdmin $false
-    }
-Honestly, might be easier to just look at Export-SPO-Sites-Owners-lite.ps1 where it's not as intrusive, but doesn't need site collection admin.
+      foreach ($site in $sites) {
+        Set-SPOUser -Site $site.Url -LoginName "<your-upn>@<yourdomain>.com" -IsSiteCollectionAdmin $false
+      }
+  - Honestly, might be easier to just look at Export-SPO-Sites-Owners-lite.ps1 where it's not as detailed on it's reporting, but doesn't need site collection admin.
 
 
 Graph delegated scopes required:
