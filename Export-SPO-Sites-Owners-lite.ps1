@@ -31,7 +31,7 @@ param(
   [string]$AdminUrl,   
 
   [Parameter(Mandatory = $false)]
-  [string]$OutputPath = ".\SPO-Sites-Owners.csv",
+  [string]$OutputPath = ".\SPO-Sites-Owners-lite.csv",
 
   [switch]$IncludeOneDrive,
 
