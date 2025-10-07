@@ -27,7 +27,7 @@ M365 Admin roles required:
   - SharePoint Admin
 
 Site Collection Admin required:
-  - This is a bit painful, because the only way to accomplish this is with Sharepoint admin, map yourself as a collection admin to every site (or everysite you need), run the script, and then remove yourself afterwards. This gets captured in audit!
+  - This is a bit painful, because the only way to accomplish this is with Sharepoint admin, map yourself as a collection admin to every site (or everysite you need), run the script, and then remove yourself afterwards.
   - The way to do this is to run this script:
     
     # Connect to SharePoint Online
