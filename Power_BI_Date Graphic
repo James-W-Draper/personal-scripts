@@ -1,0 +1,80 @@
+Here is the clean way to build a running tally of completions.
+
+## 1. Prep
+
+* If your date field has times, create a pure date column:
+
+  ```
+  DateOnly = DATEVALUE('Fact'[Date Completed])
+  ```
+* Create a proper date table and relate it to Fact[DateOnly]:
+
+  ```
+  Date = CALENDAR(MIN('Fact'[DateOnly]), MAX('Fact'[DateOnly]))
+  ```
+
+  Model view: relate Date[Date] -> Fact[DateOnly]. Mark Date as a date table.
+
+## 2. Measures
+
+Add these DAX measures on your fact table.
+
+**Count of completed**
+
+```
+Completed count =
+COUNTROWS(
+    FILTER('Fact', NOT ISBLANK('Fact'[DateOnly]))
+)
+```
+
+**Running total - respects current slicers**
+
+```
+Running completed =
+VAR MaxVisibleDate = MAX('Date'[Date])
+RETURN
+CALCULATE(
+    [Completed count],
+    REMOVEFILTERS('Date'[Date]),
+    'Date'[Date] <= MaxVisibleDate
+)
+```
+
+Notes
+
+* `REMOVEFILTERS('Date'[Date])` removes only the date grain, so page slicers for other fields still apply.
+* If you want the running total to reset per year, use:
+
+  ```
+  Running completed YTD =
+  CALCULATE([Completed count], DATESYTD('Date'[Date]))
+  ```
+* If you need a running total per category, replace `REMOVEFILTERS('Date'[Date])` with:
+
+  ```
+  ALLSELECTED('Date'[Date])
+  ```
+
+  and add `ALLEXCEPT('Fact','Fact'[Category])` if you want it to reset per category.
+
+## 3. Visual
+
+* Insert a Line chart.
+* X-axis: Date[Date].
+* Values: Running completed.
+* Make sure X-axis type is Continuous so missing dates show with a flat line rather than gaps.
+* Optional: add slicers for Product, Region, etc. The measure will respect them.
+
+## 4. Common gotchas
+
+* Missing dates: you must use a contiguous Date table to see a smooth running line.
+* Duplicates on the same day: fine, the count is of rows with a nonblank completed date.
+* Time zone or time parts: use the DateOnly column to avoid same-day splitting.
+* Blanks: the filter in the measure already excludes blanks.
+
+## 5. Quick measure alternative
+
+If you prefer the UI: Modelling -> New quick measure -> Running total. Base value = Completed count, Field = Date[Date], set it to show cumulative. This builds similar DAX, but the manual version above is cleaner.
+
+If you paste your table and column names, I will drop in measures with your exact schema.
