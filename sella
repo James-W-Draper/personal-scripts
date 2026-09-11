@@ -1,0 +1,37 @@
+# Handover — ResourcesTasksTable shows blank rows
+
+**App:** SellafieldOptic | **Screen:** ResourcesScreen | **Control:** `ResourcesTasksTable`
+
+## Symptom
+
+The Op Order table returns rows, but every cell is empty. Not an empty table — the rows are there, the text isn't. SharePoint does hold a tasking for the date being viewed.
+
+## Cause
+
+The table isn't bound to a SharePoint list. It's bound to `colOpOrderTable`, built in `ResourcesScreen.OnVisible` from the Power Automate flow **`OpOrderPDFOB2.0Sellafield`** (manual trigger; takes `date`, returns `itemsjson`).
+
+The flow is firing and returning data. The app then reads named fields out of that JSON:
+
+```
+OpOrder: Text(ThisRecord.Value.OpOrder)
+APV:     Text(ParseJSON(Text(ThisRecord.Value.APV)).Value)
+```
+
+Every field resolves to blank, which means the JSON isn't shaped the way this code expects — most likely the field names differ, or the payload is double-encoded. Power Fx returns blank (not an error) for a missing key, which is why it fails silently.
+
+A flow is used here because the Op Order PDF is a SharePoint *attachment*, and Power Apps can't bind a PDF viewer to one directly.
+
+## Already ruled out
+
+Table binding and column names, anything overlapping the table, the flow's response property (`itemsjson` is correct), the date argument, and the parse pattern — the same pattern works on four other screens.
+
+## Next step
+
+Get one row of the raw `itemsjson`:
+
+- **Power Automate → `OpOrderPDFOB2.0Sellafield` → Run history →** latest run → Response action output, or
+- **Studio → Advanced tools → Monitor →** load ResourcesScreen, read the flow response body.
+
+Then correct the field mapping in `ResourcesScreen.OnVisible` to match. Nothing else is needed.
+
+**Tip:** `OBSB` (SBScreen) is the same kind of flow with the same contract and it works. Diffing its Response action against this one will probably show the difference straight away.
